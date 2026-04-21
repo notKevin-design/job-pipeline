@@ -2,7 +2,15 @@
 
 **Automate your job search with Claude Code.** An opinionated pipeline that scrapes job postings, scores fit, gap-analyzes your resume, tailors it per job, and drafts LinkedIn outreach — all logged to Google Sheets + Drive via the `gws` CLI.
 
-<!-- TODO: add a screenshot of the onboarding wizard and/or a demo GIF of a full pipeline run -->
+<p align="center">
+  <a href="https://youtu.be/ARo_8uImIUs">
+    <img src="https://img.youtube.com/vi/ARo_8uImIUs/maxresdefault.jpg" alt="Watch the Job Pipeline launch trailer on YouTube" width="800">
+  </a>
+</p>
+
+<p align="center">
+  ▶ <a href="https://youtu.be/ARo_8uImIUs"><b>Watch the 38-second launch trailer on YouTube</b></a>
+</p>
 
 ---
 

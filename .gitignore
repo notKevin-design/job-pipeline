@@ -1,0 +1,41 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+
+# Temp pipeline scripts
+/tmp/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Next.js
+.next/
+node_modules/
+*.tsbuildinfo
+
+# Environment (secrets)
+.env.local
+.env*.local
+
+# User-generated pipeline config (the wizard writes this per user)
+USER_CONFIG.md
+
+# Orphaned resume exports / scratch content
+download.txt
+
+# Claude Code user-local overrides (project defaults live in .claude/settings.json)
+.claude/settings.local.json

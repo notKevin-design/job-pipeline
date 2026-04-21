@@ -2,17 +2,7 @@
 
 **Automate your job search with Claude Code.** An opinionated pipeline that scrapes job postings, scores fit, gap-analyzes your resume, tailors it per job, and drafts LinkedIn outreach — all logged to Google Sheets + Drive via the `gws` CLI.
 
-▶ **[Watch the 38-second launch trailer](http://localhost:3100/trailer)** — clone, `npm install`, `npm run dev`, then open in your browser. An inline video is coming soon.
-
-<!-- TO EMBED THE RECORDED VIDEO:
-     1. Record /trailer at 1920×1080 as MP4 (QuickTime → File → New Screen Recording works).
-     2. On github.com, click the pencil icon to edit this README.
-     3. Delete this entire comment, then drag the MP4 file into this spot.
-     4. GitHub will upload it and replace the drop with an inline-playing URL like
-        https://user-images.githubusercontent.com/<hash>/<file>.mp4
-     5. Commit the edit.
--->
-
+<!-- TODO: add a screenshot of the onboarding wizard and/or a demo GIF of a full pipeline run -->
 
 ---
 

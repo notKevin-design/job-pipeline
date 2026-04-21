@@ -16,7 +16,7 @@
 
 ## What this is
 
-I'm a product designer who got tired of tailoring the same resume into every job application. This repo is my setup: a Next.js onboarding wizard that generates your config, plus a set of Claude Code skills that do the actual work. It's built around my workflow — fork it, change the skills to match yours.
+I'm a product designer who got tired of tailoring the same resume for every job application. This repo is my setup: a Next.js onboarding wizard that generates your config, plus a set of Claude Code skills that do the actual work. It's built around my workflow — fork it, change the skills to match yours.
 
 ## How it works
 

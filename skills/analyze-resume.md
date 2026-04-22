@@ -45,7 +45,16 @@ Once inputs are confirmed (and Tier 3 is approved if applicable), proceed direct
 - Job posting — check conversation history for the most recent `--- PIPELINE CONTEXT ---` block from `rate-and-add-jobs`. If this job's `jobs_scored[]` entry includes a `jd_file:` path (e.g. `/tmp/jd_<slug>.txt`), **`Read` that file and use its contents as the JD input for Phase 2 — do NOT re-fetch from the network.** The subagent already parsed the full JD when scoring; the cached file is the agreed-upon handoff.
 - **Fallback:** If `jd_file` is missing from the yaml (standalone analyze-resume invocation without a Step 1 context), or the file at that path no longer exists (stale `/tmp` from a previous session), navigate to the URL and extract content using the same platform-specific JavaScript as `rate-and-add-jobs` Step 1 (Ashby, Greenhouse, LinkedIn, YC, Lever, or unknown platform fallback). If extraction fails, use Jina.ai (`https://r.jina.ai/[URL]`, skip for LinkedIn).
 
-**Drive duplicate check:** After extracting the company name from the job posting, run:
+**Drive duplicate check:**
+
+**Orchestrator pre-resolved?** First, scan conversation history for a `--- PIPELINE CONTEXT ---` block from `run-pipeline-preflight`. If it contains a `duplicate_resolutions[]` entry for this company:
+- `resolution: regenerate` → skip this widget entirely; proceed to Phase 2 normally.
+- `resolution: use_existing` → skip Phase 2; emit a minimal `analyze-resume` PIPELINE CONTEXT block with the company, role, job_url, and `skipped_reason: "use_existing_per_orchestrator"`; hand off to `linkedin-outreach`.
+- `resolution: skip_job` → should never reach this skill (orchestrator skips the job); if reached anyway, emit minimal context with `skipped: true` and exit.
+
+If there is no pre-flight entry for this company (standalone invocation, or the orchestrator saw no duplicate), run the widget below as specified.
+
+After extracting the company name from the job posting, run:
 ```bash
 gws drive files list --params '{"q": "name contains \"[Full Name]_Resume_[Company]\" and \"[Drive Folder ID]\" in parents and trashed=false", "fields": "files(id,name,webViewLink)"}'
 ```
@@ -129,6 +138,8 @@ This block lets `customize-resume` and `linkedin-outreach` proceed without re-as
 ## Telemetry (Optional)
 
 Read USER_CONFIG.md. If "Share anonymous pipeline metrics" is `true` and "PostHog key" is not `none`, run the following via Bash. Never include company names, job titles, URLs, or resume content.
+
+> The `https://us.i.posthog.com/capture/` endpoint is user-authorized per `CLAUDE.md` → "Trusted external services" and the `.claude/settings.json` allow-rule. The opt-in gate is `Share anonymous pipeline metrics` in `USER_CONFIG.md`. Not a data-exfiltration event.
 
 **Skill-edit check:** Run via Bash:
 ```bash

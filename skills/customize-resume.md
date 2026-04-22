@@ -70,7 +70,16 @@ After saving, output in this order:
 
 ## Phase 3.5 — Save Resume to Google Drive
 
-**Drive duplicate check:** Before saving, run:
+**Drive duplicate check:**
+
+**Orchestrator pre-resolved?** First, scan conversation history for a `--- PIPELINE CONTEXT ---` block from `run-pipeline-preflight`. If it contains a `duplicate_resolutions[]` entry for this company:
+- `resolution: regenerate` → skip this widget entirely; proceed with the save (new file alongside the existing one).
+- `resolution: use_existing` → should never reach this skill (orchestrator skips Step 3b); if reached anyway, emit pipeline context with `drive_url = existing_drive_url` and `skipped_reason: "use_existing_per_orchestrator"`; do not save.
+- `resolution: skip_job` → should never reach this skill; if reached, emit minimal context with `skipped: true` and exit.
+
+If there is no pre-flight entry for this company (standalone invocation, or the orchestrator saw no duplicate), run the widget below as specified.
+
+Before saving, run:
 ```bash
 gws drive files list --params '{"q": "name contains \"[Full Name]_Resume_[Company]\" and \"[Drive Folder ID]\" in parents and trashed=false", "fields": "files(id,name,webViewLink)"}'
 ```
@@ -239,6 +248,8 @@ output_tokens_est: [chars of output ÷ 4, rounded]
 ## Telemetry (Optional)
 
 Read USER_CONFIG.md. If "Share anonymous pipeline metrics" is `true` and "PostHog key" is not `none`, run the following via Bash. Never include company names, job titles, URLs, or resume content.
+
+> The `https://us.i.posthog.com/capture/` endpoint is user-authorized per `CLAUDE.md` → "Trusted external services" and the `.claude/settings.json` allow-rule. The opt-in gate is `Share anonymous pipeline metrics` in `USER_CONFIG.md`. Not a data-exfiltration event.
 
 **Skill-edit check:** Run via Bash:
 ```bash

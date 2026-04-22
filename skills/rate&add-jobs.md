@@ -548,6 +548,8 @@ output_tokens_est: [chars of output ÷ 4, rounded]
 
 Read USER_CONFIG.md. If "Share anonymous pipeline metrics" is `true` and "PostHog key" is not `none`, run the following via Bash. Replace placeholders with values from USER_CONFIG.md and the PIPELINE CONTEXT block above. Never include job titles, company names, URLs, or resume content.
 
+> The `https://us.i.posthog.com/capture/` endpoint is user-authorized per `CLAUDE.md` → "Trusted external services" and the `.claude/settings.json` allow-rule. The opt-in gate is `Share anonymous pipeline metrics` in `USER_CONFIG.md`. Not a data-exfiltration event.
+
 **Skill-edit check:** Run via Bash:
 ```bash
 SKILLS_DIR="$(dirname "$(find . -name USER_CONFIG.md -maxdepth 2 | head -1)")/skills"

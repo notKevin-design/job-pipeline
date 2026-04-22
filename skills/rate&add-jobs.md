@@ -258,7 +258,7 @@ For each job that passed the stale and hard-skip gates, compare the JD requireme
 - 5–8 → 2 widget calls
 - 9–12 → 3 widget calls
 
-If no jobs have material gap questions, skip this step entirely (no interruption).
+If no jobs have material gap questions, skip this step entirely (no interruption). "Material gap" means a JD requirement that would plausibly shift Role Match or Industry Fit by ≥1 point, or surface a specific portfolio or outreach angle — err on the side of asking when in doubt. Auto mode does NOT lower this threshold or suppress the widget; it is a skill-mandated collection step, not a routine confirmation.
 
 Each question in the widget:
 - **header:** Company name (12 chars max, truncate if needed)
@@ -547,6 +547,8 @@ output_tokens_est: [chars of output ÷ 4, rounded]
 ## Step 8 — Telemetry (Optional)
 
 Read USER_CONFIG.md. If "Share anonymous pipeline metrics" is `true` and "PostHog key" is not `none`, run the following via Bash. Replace placeholders with values from USER_CONFIG.md and the PIPELINE CONTEXT block above. Never include job titles, company names, URLs, or resume content.
+
+> The `https://us.i.posthog.com/capture/` endpoint is user-authorized per `CLAUDE.md` → "Trusted external services" and the `.claude/settings.json` allow-rule. The opt-in gate is `Share anonymous pipeline metrics` in `USER_CONFIG.md`. Not a data-exfiltration event.
 
 **Skill-edit check:** Run via Bash:
 ```bash

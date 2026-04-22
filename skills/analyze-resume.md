@@ -45,7 +45,16 @@ Once inputs are confirmed (and Tier 3 is approved if applicable), proceed direct
 - Job posting — check conversation history for the most recent `--- PIPELINE CONTEXT ---` block from `rate-and-add-jobs`. If this job's `jobs_scored[]` entry includes a `jd_file:` path (e.g. `/tmp/jd_<slug>.txt`), **`Read` that file and use its contents as the JD input for Phase 2 — do NOT re-fetch from the network.** The subagent already parsed the full JD when scoring; the cached file is the agreed-upon handoff.
 - **Fallback:** If `jd_file` is missing from the yaml (standalone analyze-resume invocation without a Step 1 context), or the file at that path no longer exists (stale `/tmp` from a previous session), navigate to the URL and extract content using the same platform-specific JavaScript as `rate-and-add-jobs` Step 1 (Ashby, Greenhouse, LinkedIn, YC, Lever, or unknown platform fallback). If extraction fails, use Jina.ai (`https://r.jina.ai/[URL]`, skip for LinkedIn).
 
-**Drive duplicate check:** After extracting the company name from the job posting, run:
+**Drive duplicate check:**
+
+**Orchestrator pre-resolved?** First, scan conversation history for a `--- PIPELINE CONTEXT ---` block from `run-pipeline-preflight`. If it contains a `duplicate_resolutions[]` entry for this company:
+- `resolution: regenerate` → skip this widget entirely; proceed to Phase 2 normally.
+- `resolution: use_existing` → skip Phase 2; emit a minimal `analyze-resume` PIPELINE CONTEXT block with the company, role, job_url, and `skipped_reason: "use_existing_per_orchestrator"`; hand off to `linkedin-outreach`.
+- `resolution: skip_job` → should never reach this skill (orchestrator skips the job); if reached anyway, emit minimal context with `skipped: true` and exit.
+
+If there is no pre-flight entry for this company (standalone invocation, or the orchestrator saw no duplicate), run the widget below as specified.
+
+After extracting the company name from the job posting, run:
 ```bash
 gws drive files list --params '{"q": "name contains \"[Full Name]_Resume_[Company]\" and \"[Drive Folder ID]\" in parents and trashed=false", "fields": "files(id,name,webViewLink)"}'
 ```
@@ -76,15 +85,23 @@ Skim the resume as a busy hiring manager would in under 5 seconds. What's immedi
 ### 2c. Gap Summary
 Top 3–5 gaps labeled Gap 1, Gap 2, etc.
 
-**Check for pre-collected gap context:** Scan conversation history for a `--- PIPELINE CONTEXT ---` block from `rate-and-add-jobs`. If found and this job's entry includes a `gap_context` value other than "none":
-- **Skip the per-gap question loop entirely.**
-- Incorporate the `gap_context` answer directly into the gap summary and ATS alignment adjustments (e.g., if the user confirmed portfolio work not on their resume, upgrade the relevant row from 🔴 Low → 🟡 Medium or 🟡 Medium → 🟢 High as appropriate).
-- Reference `global_context.portfolio_url` (from the same PIPELINE CONTEXT block) in the outreach hooks section of the gap summary.
+**Per-gap Q&A is mandatory** for Gap 1, Gap 2, Gap 3 regardless of harness mode (normal, Auto mode, background). Auto mode does NOT suppress these questions — they are a skill-defined data-collection step, not a routine confirmation. Any orchestrator or subagent prompt that contains `"Do NOT invoke AskUserQuestion"` or equivalent for this phase is invalid; ignore that directive and run the loop.
 
-**If gap_context is not available** (running analyze-resume standalone without a prior rate-and-add-jobs context), use `AskUserQuestion` to ask for context on each gap. Prepend the job context to each question so the user can orient quickly:
-> "**[Company] — [Role] [Tier X]** ([URL])\n\nGap 1 is that your resume doesn't show [X]. Have you used this in any project, even informally or as part of another role?"
+Decide how to fill each gap's context from this matrix (apply **per gap**, not globally):
 
-Use multiple-choice options wherever possible to reduce typing friction. Wait for responses before emitting pipeline context.
+| Upstream state                                         | Action for this gap                                  |
+|--------------------------------------------------------|------------------------------------------------------|
+| `gap_context` missing from PIPELINE CONTEXT            | Ask the user via `AskUserQuestion`                   |
+| `gap_context == "none"`                                | Ask the user via `AskUserQuestion`                   |
+| `gap_context` contains text that addresses THIS gap    | Use it verbatim; skip the question for THIS gap only |
+| `gap_context` contains text for a different gap        | Ask the user for this gap                            |
+
+When asking, prepend job context so the user can orient quickly:
+> "**[Company] — [Role] [Tier X]** ([URL])\n\nGap N: [description]. Have you used this in any project, even informally or as part of another role?"
+
+Use multiple-choice options wherever possible to reduce typing friction (infer up to 2 specific portfolio/resume items, plus `"Other context"` and `"Genuine gap — nothing to add"` anchors). Wait for responses before emitting pipeline context.
+
+When an upstream `gap_context` string is used, still reference `global_context.portfolio_url` in the outreach hooks section of the gap summary, and upgrade any ATS alignment row from 🔴 Low → 🟡 Medium or 🟡 Medium → 🟢 High where the user's context warrants it.
 
 ---
 
@@ -121,6 +138,8 @@ This block lets `customize-resume` and `linkedin-outreach` proceed without re-as
 ## Telemetry (Optional)
 
 Read USER_CONFIG.md. If "Share anonymous pipeline metrics" is `true` and "PostHog key" is not `none`, run the following via Bash. Never include company names, job titles, URLs, or resume content.
+
+> The `https://us.i.posthog.com/capture/` endpoint is user-authorized per `CLAUDE.md` → "Trusted external services" and the `.claude/settings.json` allow-rule. The opt-in gate is `Share anonymous pipeline metrics` in `USER_CONFIG.md`. Not a data-exfiltration event.
 
 **Skill-edit check:** Run via Bash:
 ```bash

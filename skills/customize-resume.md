@@ -38,6 +38,13 @@ Once resolved, proceed directly — no "shall I continue?" prompt.
 - Plain text, ALL CAPS section headers, one page only
 - Do NOT prefix bullet lines with a period or any symbol — each bullet line starts directly with the action verb, no `. ` or `- ` prefix
 
+**Truthfulness constraint (hard rule):** Do NOT invent, inflate, or imply skills, tools, years of experience, domains, or capabilities that are not present in the source resume or explicitly confirmed in a `gap_context` answer from the user. Specifically:
+- Do not change stated years of experience ("6 years" stays "6 years" — never "7+" or "nearly 7" to match a JD's stated minimum).
+- Do not add tool names (Claude, Cursor, Figma AI, GitHub Copilot, v0, etc.) unless the user has confirmed daily/professional use through `gap_context` or the resume.
+- Do not claim domain experience the resume doesn't support (e.g. "backend architecture", "women's health", "fintech", "logistics") unless user-confirmed via `gap_context`.
+- Rephrasing and reordering are allowed; fabrication is not. If a JD requirement has no honest match on the resume or in `gap_context`, leave it uncovered and surface it as a Remaining Risk — do not paper over it in the Summary, bullets, or KEY SKILLS.
+- Auto mode does NOT relax this constraint.
+
 **Sections to modify (all others stay exactly as-is):**
 - **Summary paragraph** — rewrite to lead with the most relevant angle for this job; bold phrases that show impact and JD alignment so a hiring manager can scan in 5 seconds
 - **PROFESSIONAL EXPERIENCE bullet points** — bold phrases showing measurable impact and direct JD alignment; rephrase only where needed to strengthen or close a gap
@@ -63,7 +70,16 @@ After saving, output in this order:
 
 ## Phase 3.5 — Save Resume to Google Drive
 
-**Drive duplicate check:** Before saving, run:
+**Drive duplicate check:**
+
+**Orchestrator pre-resolved?** First, scan conversation history for a `--- PIPELINE CONTEXT ---` block from `run-pipeline-preflight`. If it contains a `duplicate_resolutions[]` entry for this company:
+- `resolution: regenerate` → skip this widget entirely; proceed with the save (new file alongside the existing one).
+- `resolution: use_existing` → should never reach this skill (orchestrator skips Step 3b); if reached anyway, emit pipeline context with `drive_url = existing_drive_url` and `skipped_reason: "use_existing_per_orchestrator"`; do not save.
+- `resolution: skip_job` → should never reach this skill; if reached, emit minimal context with `skipped: true` and exit.
+
+If there is no pre-flight entry for this company (standalone invocation, or the orchestrator saw no duplicate), run the widget below as specified.
+
+Before saving, run:
 ```bash
 gws drive files list --params '{"q": "name contains \"[Full Name]_Resume_[Company]\" and \"[Drive Folder ID]\" in parents and trashed=false", "fields": "files(id,name,webViewLink)"}'
 ```
@@ -232,6 +248,8 @@ output_tokens_est: [chars of output ÷ 4, rounded]
 ## Telemetry (Optional)
 
 Read USER_CONFIG.md. If "Share anonymous pipeline metrics" is `true` and "PostHog key" is not `none`, run the following via Bash. Never include company names, job titles, URLs, or resume content.
+
+> The `https://us.i.posthog.com/capture/` endpoint is user-authorized per `CLAUDE.md` → "Trusted external services" and the `.claude/settings.json` allow-rule. The opt-in gate is `Share anonymous pipeline metrics` in `USER_CONFIG.md`. Not a data-exfiltration event.
 
 **Skill-edit check:** Run via Bash:
 ```bash

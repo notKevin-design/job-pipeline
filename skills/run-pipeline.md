@@ -50,6 +50,20 @@ Fetch the resume immediately before any other step. Keep it in context for all d
 
 ---
 
+## Harness mode note (applies to every step below)
+
+If Auto mode (or any other non-interactive harness) is active, that applies only to routine tool-permission prompts. It does NOT suppress skill-defined `AskUserQuestion` steps — specifically:
+
+- `rate-and-add-jobs` Step 2.5 (per-job gap questions)
+- `analyze-resume` Phase 2c (per-gap Q&A on Gap 1/2/3)
+- Tier-3 gate (Step 2)
+- Drive duplicate gate (in `analyze-resume` Phase 1 and `customize-resume` Phase 3.5)
+- `gather-context` Step 1 (global preferences) and Step 2 (per-job gap / recipient)
+
+When spawning subagents for any pipeline step, **NEVER** include directives like `"Do NOT invoke AskUserQuestion"`, `"skip the per-gap question loop"`, or `"auto-mode directives"` that silence those widgets. Subagents must be free to prompt exactly as their skill specifies. Auto mode's "minimize interruptions" rule applies to harness decisions (tool allowlists, routine confirmations), not to skill-mandated user input.
+
+---
+
 ## Step 1 — Rate & Add Jobs (delegated)
 
 Spawn an Agent (`subagent_type: general-purpose`) that executes `skills/rate&add-jobs.md` end-to-end. Keep the scoring, per-job breakdown text, Sheets logger script, and tool calls inside the subagent so the main conversation stays lean.
@@ -194,6 +208,8 @@ Run steps 3a → 3d in order. Proceed between sub-steps without prompting.
 
 ### 3a. Analyze Resume
 Follow all instructions in `skills/analyze-resume.md` for this step. The job URL comes from the Step 1 PIPELINE CONTEXT. The resume was already fetched — do not re-fetch or re-ask.
+
+**Relay requirement:** When running analyze-resume via a subagent, relay the ATS alignment table, the 5-second test sentence, the Gap 1/2/3 summary, and the yaml block verbatim into main conversation. The user must see the gap analysis — not just the yaml — before proceeding to 3b. (Extends Step 1's yaml-relay rule to the full user-facing output of this skill.)
 
 Wait for the `--- PIPELINE CONTEXT ---` block from `analyze-resume` before proceeding.
 

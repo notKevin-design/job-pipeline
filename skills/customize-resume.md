@@ -38,6 +38,13 @@ Once resolved, proceed directly — no "shall I continue?" prompt.
 - Plain text, ALL CAPS section headers, one page only
 - Do NOT prefix bullet lines with a period or any symbol — each bullet line starts directly with the action verb, no `. ` or `- ` prefix
 
+**Truthfulness constraint (hard rule):** Do NOT invent, inflate, or imply skills, tools, years of experience, domains, or capabilities that are not present in the source resume or explicitly confirmed in a `gap_context` answer from the user. Specifically:
+- Do not change stated years of experience ("6 years" stays "6 years" — never "7+" or "nearly 7" to match a JD's stated minimum).
+- Do not add tool names (Claude, Cursor, Figma AI, GitHub Copilot, v0, etc.) unless the user has confirmed daily/professional use through `gap_context` or the resume.
+- Do not claim domain experience the resume doesn't support (e.g. "backend architecture", "women's health", "fintech", "logistics") unless user-confirmed via `gap_context`.
+- Rephrasing and reordering are allowed; fabrication is not. If a JD requirement has no honest match on the resume or in `gap_context`, leave it uncovered and surface it as a Remaining Risk — do not paper over it in the Summary, bullets, or KEY SKILLS.
+- Auto mode does NOT relax this constraint.
+
 **Sections to modify (all others stay exactly as-is):**
 - **Summary paragraph** — rewrite to lead with the most relevant angle for this job; bold phrases that show impact and JD alignment so a hiring manager can scan in 5 seconds
 - **PROFESSIONAL EXPERIENCE bullet points** — bold phrases showing measurable impact and direct JD alignment; rephrase only where needed to strengthen or close a gap

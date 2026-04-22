@@ -258,7 +258,7 @@ For each job that passed the stale and hard-skip gates, compare the JD requireme
 - 5–8 → 2 widget calls
 - 9–12 → 3 widget calls
 
-If no jobs have material gap questions, skip this step entirely (no interruption).
+If no jobs have material gap questions, skip this step entirely (no interruption). "Material gap" means a JD requirement that would plausibly shift Role Match or Industry Fit by ≥1 point, or surface a specific portfolio or outreach angle — err on the side of asking when in doubt. Auto mode does NOT lower this threshold or suppress the widget; it is a skill-mandated collection step, not a routine confirmation.
 
 Each question in the widget:
 - **header:** Company name (12 chars max, truncate if needed)

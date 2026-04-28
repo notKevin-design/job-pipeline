@@ -50,6 +50,33 @@ Fetch the resume immediately before any other step. Keep it in context for all d
 
 ---
 
+## Verbatim Relay Protocol (highest-priority rule in this file)
+
+This rule has been violated on every prior pipeline run despite being documented in the per-step sections below. The failure mode is consistent: the orchestrator reads the subagent's return, drops a phrase like *"Subagent output relayed verbatim above"* or *"Step 1c verbatim relay complete (above)"*, then summarizes into bullets and proceeds. The user cannot see anything "above" — task-notification payloads are NOT visible in chat. The orchestrator's own message IS the only chat-visible relay.
+
+**The mechanical protocol — apply at every relay-required return (Step 1a, 1c, 3a-round-1, 3b, 3c):**
+
+1. The orchestrator's NEXT chat message after the subagent returns MUST begin with a heading line of the form `### [Step name] — return (verbatim)` and then a copy-pasted block containing the **entire** subagent return text, character-for-character, with all tables, prose, and yaml intact.
+2. The chat message must contain the literal first non-blank line of the subagent's return (e.g. `"✓ N jobs scored …"` or `"📄 Saved to Drive: …"` or the first row of the ATS table). If that literal text is not in your message, you have not relayed.
+3. Orchestrator commentary is permitted ONLY under a `### Orchestrator note` heading that appears AFTER the verbatim block. Never before, never inline.
+4. Self-check before sending: scan your draft message. Does it contain (a) the verbatim heading, (b) the literal first line of the subagent return, (c) any tables or yaml from the return? If any answer is no, REWRITE before sending. Do not send a draft that fails this check.
+
+**Banned phrases — the orchestrator must NEVER use any of these as a substitute for actual relay:**
+
+- "Subagent output relayed verbatim above"
+- "Step [N] verbatim relay complete (above)"
+- "verbatim relay above"
+- "see above for the full output"
+- "summary of the [step] return"
+- "Here's the gist of …"
+- Any phrase that asserts the relay happened without actually pasting the content.
+
+If you catch yourself typing one of these phrases, STOP. The user cannot see "above" — the only thing the user sees is your current message. Paste the content.
+
+**Why this rule exists:** task-notification payloads are routed to the orchestrator only. The user's chat scrollback contains your messages, not the subagent JSONL transcripts. Skipping verbatim relay silently hides per-job ATS tables, gap analyses, change logs, and risk lists that the user explicitly needs to review. This rule overrides any compression instinct from auto mode or "minimize tokens" heuristics — relay is functional, not cosmetic.
+
+---
+
 ## Interactive-input policy (applies to every step below)
 
 **All `AskUserQuestion` widgets run in MAIN context. Never delegate them to subagents.**
@@ -297,13 +324,7 @@ Spawn an Agent (`subagent_type: general-purpose`) with `Mode: score-only` direct
    2. A compact scoring summary — one line per job: `[Company] — [Role] | Tier N | X/15`. Do NOT add a reasoning sentence here; the one-sentence reason lives in the Sheets `Reason / Score summary` column only.
    3. The full `--- PIPELINE CONTEXT ---` yaml block verbatim, matching the schema above exactly (same top-level keys, same nested keys, fenced in ```yaml ... ```).
 
-**Verbatim relay is MANDATORY.** After the subagent returns, the orchestrator MUST copy-paste the subagent's entire return message into main context as a single block, unchanged. No summarization, no consolidation into bullets, no reformatting, no paraphrasing. Specifically:
-
-1. The confirmation line (e.g. `"✓ N jobs scored …"`) — pasted verbatim.
-2. The compact scoring summary — pasted verbatim.
-3. The full `--- PIPELINE CONTEXT ---` yaml block — pasted verbatim, inside the same fenced ```yaml``` block.
-
-If the orchestrator wants to add commentary, it must appear **AFTER** the pasted block under a clearly delineated `### Orchestrator note` heading. Any deviation from verbatim relay is a bug that breaks `step-metrics.md` discovery and downstream yaml reads.
+**Verbatim relay is MANDATORY.** Apply the **Verbatim Relay Protocol** at the top of this file. The orchestrator's next chat message after the Step 1c subagent returns MUST begin with `### Step 1c — return (verbatim)` and contain the subagent's entire return text (confirmation line + scoring summary + yaml block) character-for-character. Banned phrases listed in the protocol apply. No exceptions.
 
 This step now includes:
 - **Stale job gate** (Step 1.7): jobs older than 12 months require confirmation before processing — handled by the main-context widget pre-flight, not inside the subagent.
@@ -396,7 +417,7 @@ Because `AskUserQuestion` is never available inside subagents, the skill's Phase
 
 - **3a-round-1** (delegated): subagent runs `analyze-resume.md` Phases 1, 2a, 2b, and 2c gap-identification only. It emits a preliminary yaml with `gap_summary.gap1/2/3` descriptions and `gap_user_answers.*.user_answer = "pending"`. It does NOT run the per-gap Q&A loop.
 - **3a pre-flight** (main context): orchestrator reads the preliminary yaml, applies the `analyze-resume.md` Phase 2c matrix per gap, fires batched `AskUserQuestion` widgets in main (up to 3 questions per widget — one for each of Gap 1/2/3 that needs asking).
-- **3a-round-2 (no re-dispatch):** orchestrator patches the preliminary yaml in-place with the user answers, emitting a final `analyze-resume` PIPELINE CONTEXT block with all `user_answer` fields populated. This final block is what Step 3b reads. Skipping a second subagent dispatch saves ~1.5 min per job and avoids re-running ATS analysis unnecessarily.
+- **3a-round-2** (no re-dispatch): orchestrator patches the preliminary yaml in-place with the user answers, emitting a final `analyze-resume` PIPELINE CONTEXT block with all `user_answer` fields populated. This final block is what Step 3b reads. Skipping a second subagent dispatch saves ~1.5 min per job and avoids re-running ATS analysis unnecessarily.
 
 **3a-round-1 subagent prompt MUST include:**
 
@@ -407,14 +428,7 @@ Because `AskUserQuestion` is never available inside subagents, the skill's Phase
 5. **Duplicate-resolution directive:** `Duplicate resolution pre-resolved by orchestrator: regenerate. Skip the in-skill Drive duplicate-check widget.`
 6. **Required return:** the full Phase 2a ATS table, Phase 2b 5-second test, Phase 2c gap descriptions, and the preliminary `analyze-resume` PIPELINE CONTEXT yaml with `user_answer: "pending"` for each of Gap 1/2/3.
 
-**Verbatim relay for 3a-round-1 output is MANDATORY.** After the subagent returns, paste the full return message into main context unchanged:
-
-1. The full ATS alignment table with every row (🔴/🟡/🟢 included).
-2. The 5-second test sentence.
-3. Gap 1 / Gap 2 / Gap 3 descriptions with all sub-bullets.
-4. The preliminary `--- PIPELINE CONTEXT ---` yaml block, fenced in ```yaml```.
-
-No 4-bullet summary. No consolidation. The user must see every character the subagent produced. Commentary goes under `### Orchestrator note` AFTER the pasted block.
+**Verbatim relay for 3a-round-1 output is MANDATORY.** Apply the **Verbatim Relay Protocol** at the top of this file. The orchestrator's next chat message MUST begin with `### Step 3a-round-1 — return (verbatim)` and contain, character-for-character: (1) the full ATS alignment table with every row including 🔴/🟡/🟢 cells, (2) the 5-second test sentence, (3) Gap 1 / Gap 2 / Gap 3 descriptions with all sub-bullets, (4) the preliminary fenced yaml block. Banned phrases apply. The PER-GAP WIDGET BELOW must NOT be the first chat message after the subagent return — the verbatim relay message comes first, the widget comes after.
 
 **3a pre-flight — Per-gap Q&A widgets (main context):**
 
@@ -455,7 +469,7 @@ These are the canonical inputs for customize-resume's truthfulness constraint �
 
 Wait for the `--- PIPELINE CONTEXT ---` block from `customize-resume` before proceeding. The returned block must include `gap_context_applied` — verify every user answer is accounted for (named a section, marked as surfaced risk, or marked `n/a`).
 
-**Verbatim relay is MANDATORY.** Same rule as 3a. Paste the full "📄 Saved to Drive …" block, the Change Log (all numbered items), and the Remaining Risks (all bullets) into main context verbatim. No summarization, no consolidation. Commentary goes under an `### Orchestrator note` heading AFTER the pasted block.
+**Verbatim relay is MANDATORY.** Apply the **Verbatim Relay Protocol** at the top of this file. The orchestrator's next chat message after the customize-resume subagent returns MUST begin with `### Step 3b — return (verbatim)` and contain, character-for-character: (1) the `📄 Saved to Drive: …` line, (2) the full Change Log with every numbered bold-labeled bullet, (3) the full Remaining Risks list with every bullet, (4) the fenced yaml block including `gap_context_applied`. Banned phrases apply.
 
 ### 3c. LinkedIn Outreach
 Follow all instructions in `skills/linkedin-outreach.md` for this step.

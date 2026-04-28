@@ -276,12 +276,51 @@ Follow all instructions in `skills/analyze-resume.md` for this step. The job URL
 Wait for the `--- PIPELINE CONTEXT ---` block from `analyze-resume` before proceeding.
 
 ### 3b. Customize Resume
-Follow all instructions in `skills/customize-resume.md` for this step. Context flows automatically from the `analyze-resume` PIPELINE CONTEXT block.
+Follow all instructions in `skills/customize-resume.md` for this step.
 
-Wait for the `--- PIPELINE CONTEXT ---` block from `customize-resume` before proceeding.
+**Subagent handoff — verbatim gap-context relay (REQUIRED):** When dispatching customize-resume as a subagent, the subagent does NOT inherit main-context state. The orchestrator MUST inline the following fields — verbatim, no paraphrasing — into the subagent prompt, pulled directly from the Step 3a analyze-resume yaml:
+
+```
+## Pre-resolved user-provided gap context (use verbatim; authoritative)
+gap_context_from_rating: [verbatim string from analyze-resume yaml, or "none"]
+gap_user_answers:
+  gap1:
+    user_answer: [verbatim text]
+    claude_interpretation: [verbatim]
+  gap2:
+    user_answer: [verbatim text]
+    claude_interpretation: [verbatim]
+  gap3:
+    user_answer: [verbatim text]
+    claude_interpretation: [verbatim]
+```
+
+These are the canonical inputs for customize-resume's truthfulness constraint — privilege them over `gap_summary` prose. Never summarize a `user_answer` value before embedding it in the prompt; any summarization loses user signal.
+
+Wait for the `--- PIPELINE CONTEXT ---` block from `customize-resume` before proceeding. The returned block must include `gap_context_applied` — verify every user answer is accounted for (named a section, marked as surfaced risk, or marked `n/a`).
 
 ### 3c. LinkedIn Outreach
-Follow all instructions in `skills/linkedin-outreach.md` for this step. Context flows automatically from the `analyze-resume` and `customize-resume` PIPELINE CONTEXT blocks.
+Follow all instructions in `skills/linkedin-outreach.md` for this step.
+
+**Subagent handoff — verbatim gap-context relay (REQUIRED):** Same rule as 3b. The linkedin-outreach subagent prompt MUST inline these fields verbatim — one block from analyze-resume, one from customize-resume:
+
+```
+## Pre-resolved user-provided gap context (use verbatim; authoritative for Proof sentence)
+gap_context_from_rating: [verbatim]
+gap_user_answers:
+  gap1: { user_answer: [verbatim], claude_interpretation: [verbatim] }
+  gap2: { user_answer: [verbatim], claude_interpretation: [verbatim] }
+  gap3: { user_answer: [verbatim], claude_interpretation: [verbatim] }
+
+## Pre-resolved resume-tailoring audit (from customize-resume)
+gap_context_applied:
+  gap1: [section name, or "surfaced as remaining risk", or "n/a"]
+  gap2: [...]
+  gap3: [...]
+  gap_context_from_rating: [...]
+```
+
+Per `linkedin-outreach.md`'s Proof-sentence priority: the subagent should prefer a user-provided answer (especially one marked `"surfaced as remaining risk"` in `gap_context_applied`, since those were not folded into the resume and are the strongest outreach hooks) over a resume-only metric.
 
 ### 3d. Job Summary Line
 After outreach is complete, print one line:

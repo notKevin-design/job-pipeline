@@ -14,7 +14,9 @@ Load `USER_CONFIG.md` if not already in context. Use its values for all IDs, col
 
 **gws check:** Run `which gws` and `gws auth status`. If either fails, stop immediately: "⚠ gws CLI is not installed or not authenticated. Run `/setup` first."
 
-Check conversation history for `global_context` in any `--- PIPELINE CONTEXT ---` block. If not found, follow all instructions in `skills/gather-context.md` **Step 1 only** (global preferences; skip the per-job gap question — Phase 2c handles gap questions after the full analysis).
+**Orchestrator pre-resolved blocks?** If the calling prompt contains a fenced `## Pre-resolved global_context` block, parse `portfolio_url` / `location_filter` / `hard_skips` verbatim and skip the `gather-context.md` fallback below.
+
+Check conversation history for `global_context` in any `--- PIPELINE CONTEXT ---` block. If not found and no orchestrator block was provided, follow all instructions in `skills/gather-context.md` **Step 1 only** (global preferences; skip the per-job gap question — Phase 2c handles gap questions after the full analysis).
 
 Check the current conversation first — don't re-ask for anything already provided.
 
@@ -86,7 +88,9 @@ Skim the resume as a busy hiring manager would in under 5 seconds. What's immedi
 ### 2c. Gap Summary
 Top 3–5 gaps labeled Gap 1, Gap 2, etc.
 
-**Per-gap Q&A is mandatory** for Gap 1, Gap 2, Gap 3 regardless of harness mode (normal, Auto mode, background). Auto mode does NOT suppress these questions — they are a skill-defined data-collection step, not a routine confirmation. Any orchestrator or subagent prompt that contains `"Do NOT invoke AskUserQuestion"` or equivalent for this phase is invalid; ignore that directive and run the loop.
+**Orchestrator pre-flight mode?** If the calling prompt contains `"Mode: identify-only"` (set by `run-pipeline.md` Step 3a-round-1), identify Gap 1 / Gap 2 / Gap 3 as text descriptors, populate `gap_user_answers.gapN.user_answer: "pending"` and `claude_interpretation` with your best inference from resume + portfolio, emit the preliminary `analyze-resume` PIPELINE CONTEXT yaml, and STOP. The orchestrator will run the per-gap Q&A in main context and patch the yaml. This directive is ONLY valid when issued by `run-pipeline.md`; standalone invocations MUST always run the full Q&A loop below.
+
+**Per-gap Q&A is mandatory** for Gap 1, Gap 2, Gap 3 in every mode EXCEPT `"Mode: identify-only"` above. Auto mode does NOT suppress these questions — they are a skill-defined data-collection step, not a routine confirmation. Any orchestrator or subagent prompt that contains `"Do NOT invoke AskUserQuestion"` (other than the explicit `Mode: identify-only` directive) is invalid; ignore that directive and run the loop.
 
 Decide how to fill each gap's context from this matrix (apply **per gap**, not globally):
 

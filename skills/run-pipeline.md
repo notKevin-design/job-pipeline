@@ -50,17 +50,22 @@ Fetch the resume immediately before any other step. Keep it in context for all d
 
 ---
 
-## Harness mode note (applies to every step below)
+## Interactive-input policy (applies to every step below)
 
-If Auto mode (or any other non-interactive harness) is active, that applies only to routine tool-permission prompts. It does NOT suppress skill-defined `AskUserQuestion` steps — specifically:
+**All `AskUserQuestion` widgets run in MAIN context. Never delegate them to subagents.**
 
-- `rate-and-add-jobs` Step 2.5 (per-job gap questions)
-- `analyze-resume` Phase 2c (per-gap Q&A on Gap 1/2/3)
-- Tier-3 gate (Step 2)
-- Drive duplicate gate (in `analyze-resume` Phase 1 and `customize-resume` Phase 3.5)
-- `gather-context` Step 1 (global preferences) and Step 2 (per-job gap / recipient)
+Empirically, general-purpose subagents cannot reliably fire `AskUserQuestion` — they either lack the tool in their environment or decline to invoke it and default to placeholder values like `"none"`. The Drive-duplicate pre-flight (Step 3 pre-flight below) already proves that widgets work reliably when the orchestrator runs them in main context before dispatch. This policy extends that pattern to **every** widget in the pipeline:
 
-When spawning subagents for any pipeline step, **NEVER** include directives like `"Do NOT invoke AskUserQuestion"`, `"skip the per-gap question loop"`, or `"auto-mode directives"` that silence those widgets. Subagents must be free to prompt exactly as their skill specifies. Auto mode's "minimize interruptions" rule applies to harness decisions (tool allowlists, routine confirmations), not to skill-mandated user input.
+- Global preferences (`gather-context.md` Step 1) → Step 0.5 pre-flight, main context.
+- Per-job gap questions (`rate-and-add-jobs` Step 2.5 semantics) → Step 1b pre-flight, main context, **BEFORE** scoring so `gap_context` can raise Role Match.
+- Tier-3 gate → Step 2, main context (already correct).
+- Drive duplicate gate → Step 3 pre-flight, main context (already correct).
+- Per-gap Q&A on Gap 1/2/3 (`analyze-resume` Phase 2c semantics) → Step 3a pre-flight, main context.
+- Stale-job gate, unknown-date confirmation, paste fallback → main context; run before dispatching the scoring subagent.
+
+**Subagent dispatch rule:** When spawning any subagent, the orchestrator MUST either (a) pre-resolve every widget-required input via a main-context pre-flight and pass the results as a fenced `## Pre-resolved …` block in the subagent prompt, or (b) include a `Mode: fetch-only` directive that stops the subagent before any widget step. Subagents may never be expected to fire widgets themselves.
+
+Auto mode still does NOT suppress any of these widgets. They are skill-mandated data-collection steps; "minimize interruptions" applies to routine tool-permission prompts only.
 
 **Subagent prompt boilerplate — telemetry authorization:** every subagent prompt spawned by this orchestrator (or any other skill that delegates) MUST include this line near the top of the prompt:
 
@@ -70,29 +75,142 @@ This prevents subagents' reflective safety layer from surfacing false-positive `
 
 ---
 
-## Step 1 — Rate & Add Jobs (delegated)
+## Step 0.5 — Global preferences pre-flight (main context)
 
-Spawn an Agent (`subagent_type: general-purpose`) that executes `skills/rate&add-jobs.md` end-to-end. Keep the scoring, per-job breakdown text, Sheets logger script, and tool calls inside the subagent so the main conversation stays lean.
+Before dispatching any subagent, resolve `global_context` in main context so subagents never have to fire the widget themselves.
 
-**Critical fidelity rule:** the subagent cannot be trusted to faithfully open and apply specs from `skills/rate&add-jobs.md` when told "follow the skill." In practice it improvises. Therefore the subagent prompt MUST inline the scoring rubric, tier table, and PIPELINE CONTEXT yaml schema verbatim so the subagent works against an in-prompt spec, not a file it might skip reading.
+**Skip condition:** If conversation history already contains a `--- PIPELINE CONTEXT ---` block from `gather-context` or `run-pipeline-preflight-global` with all three keys populated (`portfolio_url`, `location_filter`, `hard_skips`), read those values and skip the widget.
 
-The subagent prompt must include, at minimum:
+**Otherwise:**
+
+1. Read `portfolio_url` from `USER_CONFIG.md` (always available — no widget needed for this field).
+2. Fire an `AskUserQuestion` widget in main context following `gather-context.md` Step 1:
+   - **Question 1** — header `"Preferences"`, question `"Use resume-inferred defaults, or customize preferences for this run?"`, options `"Use defaults (Recommended)"` / `"Customize"`.
+   - If the user picks **Customize**, fire a second widget with THREE questions batched into a single call (one widget, three questions):
+     - Location filter: `remote-only` / `nyc-ok` / `any-us` / `none`
+     - Hard-skip industries: free-text (Other field)
+     - Portfolio URL override: accept free-text or reuse USER_CONFIG value
+3. Emit the resolved values as a pre-flight yaml block in main conversation:
+
+```yaml
+--- PIPELINE CONTEXT ---
+skill: run-pipeline-preflight-global
+global_context:
+  portfolio_url: [URL]
+  location_filter: [remote-only|nyc-ok|any-us|none]
+  hard_skips: [text or "none"]
+--- END PIPELINE CONTEXT ---
+```
+
+All downstream subagent prompts MUST include these values as the `## Pre-resolved global_context` block. Because Step 0.5 now guarantees resolution, the "optional" caveat in Step 1's subagent-prompt description no longer applies — this block is always included.
+
+---
+
+## Step 1 — Rate & Add Jobs (three phases: fetch → widgets → score)
+
+The user expects the per-job gap widget to fire BEFORE rating, so `gap_context` actually flows into Role Match scoring. To achieve this without re-implementing the scraping logic in main context, Step 1 is split into three phases:
+
+- **Step 1a** (delegated, `Mode: fetch-only`): subagent runs `rate&add-jobs.md` Step 1 (extraction) + Step 1.8 (JD caching) only. Returns per-job yaml with company/role/url/date/jd_file path. Skips all widgets and all scoring.
+- **Step 1b** (main context): orchestrator fires stale-job gate, unknown-date confirmation, and per-job gap widgets in main. Pre-resolves every interactive input.
+- **Step 1c** (delegated, `Mode: score-only`): subagent runs Steps 2 (hard-skips + location filter) through 8 (scoring, tier, Sheets log, PIPELINE CONTEXT, telemetry) with pre-resolved gap_context flowing into Role Match.
+
+**Critical fidelity rule:** subagents cannot be trusted to faithfully open skill files. The subagent prompt MUST inline the relevant skill spec verbatim in each phase.
+
+---
+
+### Step 1a — Fetch-only subagent
+
+Spawn an Agent (`subagent_type: general-purpose`) with `Mode: fetch-only` directive. Subagent prompt MUST include:
 
 1. **The job URLs verbatim.**
-2. **The USER_CONFIG.md values needed:** spreadsheet ID, tab, column letters (J–S), Full Name, Drive folder ID, portfolio URL, PostHog key, anonymous user ID.
-3. **Instruction to load the resume itself** from the Resume Google Doc ID (subagent cannot see main-context state; resume re-fetch adds ~2s).
-4. **Already-resolved `global_context` values** (if available in main conversation) to skip the Step 2 widget. Pass them as a fenced block in the subagent prompt so the skill's Step 2 inline-detection logic can pick them up verbatim without heuristics:
+2. **Mode directive (verbatim):** `"Mode: fetch-only — run only Step 1 (extraction) and Step 1.8 (JD caching) from skills/rate&add-jobs.md. Do NOT run Step 1.5 (unknown-date widget), Step 1.7 (stale-job gate), Step 2 (global preferences), Step 2.5 (per-job gap questions), or any of Steps 3–8. Emit the fetch-only yaml schema (below) and STOP."`
+3. **USER_CONFIG.md values** (subset needed for fetching): no Sheets ID needed.
+4. **Instruction to parallelize WebFetch** across all non-LinkedIn URLs, use browser JS for LinkedIn, and fall back to Jina / direct curl for JSON-LD date extraction per `rate&add-jobs.md` Step 1.5 HTML-source fallback (curl only — no widget).
+5. **Required return yaml (verbatim schema, fenced ```yaml```):**
+
+   ```yaml
+   --- PIPELINE CONTEXT ---
+   skill: rate-and-add-jobs-fetch
+   jobs_fetched:
+     - company: [Company]
+       role: [Role]
+       url: [plain URL]
+       compensation: [comp or "Not listed"]
+       date_posted: [mm/dd/yyyy or "Unknown"]
+       jd_file: [/tmp/jd_<slug>.txt path]
+       scrape_status: [ok|failed|unknown-date]
+     [repeat per job]
+   scrape_failures: [list of URLs that fell through all extraction attempts, else empty]
+   step_start_time: [HH:MM]
+   step_end_time: [HH:MM]
+   step_duration_min: [int]
+   output_tokens_est: [int]
+   --- END PIPELINE CONTEXT ---
+   ```
+
+Wait for the fetch yaml before proceeding to Step 1b.
+
+---
+
+### Step 1b — Pre-flight widgets (main context)
+
+Read the `rate-and-add-jobs-fetch` yaml from main context. Then fire the following widgets **IN MAIN CONTEXT** — in order, skipping any widget whose trigger condition is unmet:
+
+**1b(i) — Paste fallback** (if `scrape_failures` is non-empty): one `AskUserQuestion` widget per failed URL (batched up to 4 per call). Question: `"I couldn't access [URL]. Paste the full job description text in the Other field, or select 'Skip this job'."` Update `jobs_fetched` with pasted JD content (write to `/tmp/jd_<slug>.txt`) and re-fetch dates as possible.
+
+**1b(ii) — Unknown-date confirmation** (if any job has `scrape_status: unknown-date` or `date_posted: Unknown` after the curl fallback): batched widget asking the user to verify each job's post date. One question per unknown-date job.
+
+**1b(iii) — Stale-job gate** (if any job has `date_posted > 12 months ago` relative to today): one `AskUserQuestion` widget with `multiSelect: true`, one option per stale job. Unchecked jobs get `status: skipped-stale` and are excluded from 1c scoring.
+
+**1b(iv) — Per-job gap questions (the load-bearing widget for scoring):** for each job that survived (i) through (iii), `Read` its `jd_file`, compare against the resume (already in main context from "Before Starting"), and identify at most one material gap using the criteria in `rate&add-jobs.md` Step 2.5 (would shift Role Match or Industry Fit by ≥1 point, or surface a concrete portfolio / outreach angle). Batch up to 4 jobs per `AskUserQuestion` call — one question per job. Widget schema follows `rate&add-jobs.md:263-273` verbatim:
+- header: company name (12 chars max)
+- question: `"[Company — Role] [JD-derived gap description and ask]"`
+- multiSelect: false
+- options: up to 2 inferred specific items (e.g. `"[Case study name] in portfolio"`) + `"Other context"` + `"Genuine gap — nothing to add"`
+- If no specific items can be inferred: `"Something not listed — Other field"` / `"Genuine gap — nothing to add"`.
+
+If no jobs have material gaps, skip this widget.
+
+**Emit the pre-flight yaml** to main conversation:
+
+```yaml
+--- PIPELINE CONTEXT ---
+skill: run-pipeline-preflight-jobs
+resolved_jobs:
+  - company: [Company]
+    role: [Role]
+    url: [URL]
+    date_posted: [mm/dd/yyyy]
+    jd_file: [path]
+    status: [scored|skipped-stale]
+    gap_context: [verbatim user answer text, or "none"]
+  [repeat per job]
+--- END PIPELINE CONTEXT ---
+```
+
+This yaml is the single source of truth that Step 1c reads.
+
+---
+
+### Step 1c — Score-only subagent
+
+Spawn an Agent (`subagent_type: general-purpose`) with `Mode: score-only` directive. Subagent prompt MUST include:
+
+1. **Mode directive (verbatim):** `"Mode: score-only — skip Step 1 (already fetched), Step 1.5–1.7 (widgets already resolved in main), and Step 2.5 (gap_context pre-resolved in main). Use the pre-resolved jobs and gap_contexts below. Run Step 2 hard-skips + location filter, Steps 3–8 (score, tier, Sheets log, PIPELINE CONTEXT, telemetry)."`
+2. **Pre-resolved blocks (verbatim):**
 
    ```
    ## Pre-resolved global_context (use directly, do not re-prompt)
-   portfolio_url: <value>
-   location_filter: <remote-only|nyc-ok|any-us|none>
-   hard_skips: <text or "none">
-   ```
+   portfolio_url: <from Step 0.5>
+   location_filter: <from Step 0.5>
+   hard_skips: <from Step 0.5>
 
-   Only include the block when all three values are known in main context (Portfolio URL always comes from `USER_CONFIG.md`; `location_filter` and `hard_skips` require a prior `gather-context` run or explicit user confirmation). If any value is unknown, omit the block entirely and let the subagent fall through to `gather-context.md` Step 1.
-5. **Instruction to run all of `skills/rate&add-jobs.md` Steps 1–8** including: gws auth check, stale-job gate (Step 1.7), **JD caching (Step 1.8 — Write each cleaned plain-text JD to `/tmp/jd_<slug>.txt` and record the path in the yaml's `jd_file:` field per job)**, per-job gap questions (Step 2.5), scoring, Sheets logging, PIPELINE CONTEXT emission, and PostHog telemetry. The `jd_file` path is how `analyze-resume` avoids a redundant re-fetch — it MUST be written to disk and surfaced in the yaml.
-6. **The scoring rubric inlined verbatim** — copy this block into the subagent prompt exactly:
+   ## Pre-resolved per-job inputs (use directly, do not re-fetch or re-prompt)
+   <paste the resolved_jobs list from Step 1b yaml, one entry per job>
+   ```
+3. **USER_CONFIG.md values** (full set needed for Sheets log).
+4. **Instruction to load the resume itself** from the Resume Google Doc ID.
+5. **The scoring rubric inlined verbatim** — copy this block into the subagent prompt exactly:
 
    ```
    ## Scoring Rubric (5 dimensions, 0–3 each, max 15)
@@ -134,7 +252,7 @@ The subagent prompt must include, at minimum:
    additional dimensions. Sum the five dimensions for the total (0–15).
    ```
 
-7. **The tier table inlined verbatim** — copy this block exactly:
+6. **The tier table inlined verbatim** — copy this block exactly:
 
    ```
    ## Tier Assignment
@@ -143,7 +261,7 @@ The subagent prompt must include, at minimum:
    - Total 0–6   → Tier 3 (Speculative)
    ```
 
-8. **The canonical PIPELINE CONTEXT yaml schema inlined verbatim** — copy this block exactly, instructing the subagent to fill in every field and use these exact top-level keys (`skill`, `global_context`, `jobs_scored`, `sheets_logged`, etc.) and these exact nested keys:
+7. **The canonical PIPELINE CONTEXT yaml schema inlined verbatim** — copy this block exactly, instructing the subagent to fill in every field and use these exact top-level keys (`skill`, `global_context`, `jobs_scored`, `sheets_logged`, etc.) and these exact nested keys:
 
    ```
    --- PIPELINE CONTEXT ---
@@ -174,19 +292,23 @@ The subagent prompt must include, at minimum:
    ```
    `location_mismatch` is intentionally omitted from the schema — its effect is already captured in `tier` and `score` via the Step 2 filter.
 
-9. **Required return message (in this exact order):**
+8. **Required return message (in this exact order):**
    1. A brief confirmation line (e.g. `"✓ N jobs scored and logged to Sheets rows X–Y."`).
    2. A compact scoring summary — one line per job: `[Company] — [Role] | Tier N | X/15`. Do NOT add a reasoning sentence here; the one-sentence reason lives in the Sheets `Reason / Score summary` column only.
    3. The full `--- PIPELINE CONTEXT ---` yaml block verbatim, matching the schema above exactly (same top-level keys, same nested keys, fenced in ```yaml ... ```).
 
-After the subagent returns, **relay its return message into main context verbatim**. The yaml block must land in the main conversation so `skills/step-metrics.md` can find it and downstream skills can read `global_context`, `jobs_scored`, and per-job `gap_context`.
+**Verbatim relay is MANDATORY.** After the subagent returns, the orchestrator MUST copy-paste the subagent's entire return message into main context as a single block, unchanged. No summarization, no consolidation into bullets, no reformatting, no paraphrasing. Specifically:
 
-AskUserQuestion widgets (per-job gap questions, paste fallback, unknown-date, stale-job-gate) still reach the user via the normal UI because AskUserQuestion is available to general-purpose subagents. The Step 2 global-preferences widget should be skipped if global_context values were passed in the subagent prompt.
+1. The confirmation line (e.g. `"✓ N jobs scored …"`) — pasted verbatim.
+2. The compact scoring summary — pasted verbatim.
+3. The full `--- PIPELINE CONTEXT ---` yaml block — pasted verbatim, inside the same fenced ```yaml``` block.
 
-This step now includes (all executed inside the subagent):
-- **Stale job gate** (Step 1.7): jobs older than 12 months require confirmation before processing.
-- **Global preferences** (Step 2): if not pre-passed, delegates to `skills/gather-context.md` Step 1 — portfolio URL, location filter, hard-skip industries.
-- **Per-job gap questions** (Step 2.5): one JD-specific question per job (batched 4/widget) after JD extraction. Answers flow into scoring and all downstream steps via `gap_context` in the PIPELINE CONTEXT.
+If the orchestrator wants to add commentary, it must appear **AFTER** the pasted block under a clearly delineated `### Orchestrator note` heading. Any deviation from verbatim relay is a bug that breaks `step-metrics.md` discovery and downstream yaml reads.
+
+This step now includes:
+- **Stale job gate** (Step 1.7): jobs older than 12 months require confirmation before processing — handled by the main-context widget pre-flight, not inside the subagent.
+- **Global preferences**: pre-resolved in Step 0.5 (main context) before this step runs; never delegated.
+- **Per-job gap questions**: pre-resolved in Step 1b (main context) AFTER JD fetch but BEFORE scoring, so `gap_context` flows into Role Match scoring. Never delegated.
 
 Wait for the subagent to return and for the `--- PIPELINE CONTEXT ---` block to appear in main context before proceeding to Step 2.
 
@@ -268,12 +390,46 @@ When spawning the subagent for 3a or 3b with `duplicate_resolution: regenerate`,
 
 This is the ONLY harness-mode-suppression directive that is permitted — and only for this specific widget whose answer was already collected in main context. Never suppress other widgets.
 
-### 3a. Analyze Resume
-Follow all instructions in `skills/analyze-resume.md` for this step. The job URL comes from the Step 1 PIPELINE CONTEXT. The resume was already fetched — do not re-fetch or re-ask.
+### 3a. Analyze Resume (two-round flow: identify → pre-flight Q&A → finalize)
 
-**Relay requirement:** When running analyze-resume via a subagent, relay the ATS alignment table, the 5-second test sentence, the Gap 1/2/3 summary, and the yaml block verbatim into main conversation. The user must see the gap analysis — not just the yaml — before proceeding to 3b. (Extends Step 1's yaml-relay rule to the full user-facing output of this skill.)
+Because `AskUserQuestion` is never available inside subagents, the skill's Phase 2c per-gap Q&A cannot run inside the subagent. Step 3a splits into:
 
-Wait for the `--- PIPELINE CONTEXT ---` block from `analyze-resume` before proceeding.
+- **3a-round-1** (delegated): subagent runs `analyze-resume.md` Phases 1, 2a, 2b, and 2c gap-identification only. It emits a preliminary yaml with `gap_summary.gap1/2/3` descriptions and `gap_user_answers.*.user_answer = "pending"`. It does NOT run the per-gap Q&A loop.
+- **3a pre-flight** (main context): orchestrator reads the preliminary yaml, applies the `analyze-resume.md` Phase 2c matrix per gap, fires batched `AskUserQuestion` widgets in main (up to 3 questions per widget — one for each of Gap 1/2/3 that needs asking).
+- **3a-round-2 (no re-dispatch):** orchestrator patches the preliminary yaml in-place with the user answers, emitting a final `analyze-resume` PIPELINE CONTEXT block with all `user_answer` fields populated. This final block is what Step 3b reads. Skipping a second subagent dispatch saves ~1.5 min per job and avoids re-running ATS analysis unnecessarily.
+
+**3a-round-1 subagent prompt MUST include:**
+
+1. **Pre-flight mode directive (verbatim):** `"Mode: identify-only — run Phases 1, 2a, 2b, and 2c identification. Do NOT run the per-gap Q&A loop; leave gap_user_answers.gapN.user_answer set to 'pending' and gapN.claude_interpretation set to your best inference from resume + portfolio. The orchestrator will run the Q&A in main context and patch the yaml."`
+2. **Pre-resolved global_context block** (verbatim from Step 0.5).
+3. **Pre-resolved gap_context_from_rating** (verbatim from the specific job's entry in the Step 1c yaml — this is the user's rating-time answer, if any).
+4. **The job URL, company, role, tier, jd_file path** from the Step 1c yaml.
+5. **Duplicate-resolution directive:** `Duplicate resolution pre-resolved by orchestrator: regenerate. Skip the in-skill Drive duplicate-check widget.`
+6. **Required return:** the full Phase 2a ATS table, Phase 2b 5-second test, Phase 2c gap descriptions, and the preliminary `analyze-resume` PIPELINE CONTEXT yaml with `user_answer: "pending"` for each of Gap 1/2/3.
+
+**Verbatim relay for 3a-round-1 output is MANDATORY.** After the subagent returns, paste the full return message into main context unchanged:
+
+1. The full ATS alignment table with every row (🔴/🟡/🟢 included).
+2. The 5-second test sentence.
+3. Gap 1 / Gap 2 / Gap 3 descriptions with all sub-bullets.
+4. The preliminary `--- PIPELINE CONTEXT ---` yaml block, fenced in ```yaml```.
+
+No 4-bullet summary. No consolidation. The user must see every character the subagent produced. Commentary goes under `### Orchestrator note` AFTER the pasted block.
+
+**3a pre-flight — Per-gap Q&A widgets (main context):**
+
+For each gap in `gap_summary`, apply the Phase 2c matrix from `analyze-resume.md` lines 88–98:
+- If `gap_context_from_rating` already addresses THIS gap → skip the question for THIS gap; set `user_answer: "skipped — addressed by gap_context_from_rating"`.
+- Otherwise → ask this gap.
+
+Fire one `AskUserQuestion` widget per job with up to 3 questions (one per gap that needs asking). Question template from `analyze-resume.md:100`:
+> `"**[Company] — [Role] [Tier X]** ([URL])\n\nGap N: [description]. Have you used this in any project, even informally or as part of another role?"`
+
+Options: infer up to 2 specific portfolio/resume items, plus `"Other context"` and `"Genuine gap — nothing to add"` anchors.
+
+**Patch and re-emit the final yaml:** after widgets return, emit a NEW `analyze-resume` PIPELINE CONTEXT block in main conversation with every `gap_user_answers.gapN.user_answer` populated verbatim from the user's widget response. `"Genuine gap — nothing to add"` selections become `user_answer: "none"`. The final yaml is the source of truth Step 3b reads.
+
+Wait for the final `--- PIPELINE CONTEXT ---` block before proceeding.
 
 ### 3b. Customize Resume
 Follow all instructions in `skills/customize-resume.md` for this step.
@@ -298,6 +454,8 @@ gap_user_answers:
 These are the canonical inputs for customize-resume's truthfulness constraint — privilege them over `gap_summary` prose. Never summarize a `user_answer` value before embedding it in the prompt; any summarization loses user signal.
 
 Wait for the `--- PIPELINE CONTEXT ---` block from `customize-resume` before proceeding. The returned block must include `gap_context_applied` — verify every user answer is accounted for (named a section, marked as surfaced risk, or marked `n/a`).
+
+**Verbatim relay is MANDATORY.** Same rule as 3a. Paste the full "📄 Saved to Drive …" block, the Change Log (all numbered items), and the Remaining Risks (all bullets) into main context verbatim. No summarization, no consolidation. Commentary goes under an `### Orchestrator note` heading AFTER the pasted block.
 
 ### 3c. LinkedIn Outreach
 Follow all instructions in `skills/linkedin-outreach.md` for this step.

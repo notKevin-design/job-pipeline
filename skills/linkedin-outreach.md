@@ -15,8 +15,10 @@ Load `USER_CONFIG.md` if not already in context. Use its values for all IDs, col
 **gws check:** Run `which gws` and `gws auth status`. If either fails, stop immediately: "⚠ gws CLI is not installed or not authenticated. Run `/setup` first."
 
 Scan conversation history for the most recent `--- PIPELINE CONTEXT ---` blocks from `analyze-resume` and `customize-resume`. If found, extract silently:
-- From `analyze-resume`: company, role, job_url, recipient_name, gap_summary, ats_keywords_missing
-- From `customize-resume`: drive_url (for reference if needed)
+- From `analyze-resume`: company, role, job_url, recipient_name, gap_summary, ats_keywords_missing, **gap_context_from_rating**, and **gap_user_answers.gap1/gap2/gap3.user_answer** (each verbatim)
+- From `customize-resume`: drive_url, **gap_context_applied**
+
+The two verbatim user-answer channels — `gap_context_from_rating` and `gap_user_answers.*.user_answer` — are authoritative for what concrete projects, metrics, or experience the user has surfaced. When drafting the Proof sentence in Phase 4, prefer wording grounded in these fields over resume-derived metrics. `gap_context_applied` tells you which answers were already folded into the resume body; any answer marked `"surfaced as remaining risk"` or `"n/a"` is still fair game to cite in outreach.
 
 If no `analyze-resume` or `rate-and-add-jobs` context is found, follow all instructions in `skills/gather-context.md` (both Step 1 and Step 2) to collect global preferences and the per-job gap question before drafting. The job URL must be provided or already in context.
 
@@ -45,7 +47,7 @@ Structure (do not break into bullets in the actual message — write as flowing 
 
 1. **Opening:** "I applied for [role title] at [Company] — [job post URL]"
 2. **Problem hook:** One sentence naming the specific problem the JD is trying to solve.
-3. **Proof:** One to two sentences linking a real project, outcome, or metric from the user's resume directly to that problem. Be concrete — name the work or the number.
+3. **Proof:** One to two sentences linking a real project, outcome, or metric directly to that problem. Be concrete — name the work or the number. **Source priority:** if `gap_user_answers.*.user_answer` or `gap_context_from_rating` contains a user-provided project, portfolio piece, or transferable role that maps to the JD's problem, quote or paraphrase it here — the user chose to surface it for a reason. Fall back to resume metrics only when no user answer applies.
 4. **CTA:** "I'd love to be on [Company]'s radar — if my background looks like a fit, I'd really appreciate you passing my application to the hiring team."
 5. **Portfolio line:** Portfolio URL from USER_CONFIG.md (or `global_context.portfolio_url` from PIPELINE CONTEXT if available)
 6. **Sign-off:** First name from USER_CONFIG.md

@@ -16,7 +16,7 @@ Load `USER_CONFIG.md` if not already in context. Use its values for all IDs, col
 
 Check conversation history for `global_context` in any `--- PIPELINE CONTEXT ---` block. If not found, follow all instructions in `skills/gather-context.md` **Step 1 only**.
 
-Scan conversation history for the most recent `--- PIPELINE CONTEXT ---` block from `analyze-resume`. If found, extract silently: company, role, job_url, gap_summary, ats_keywords_missing. Do not re-announce.
+Scan conversation history for the most recent `--- PIPELINE CONTEXT ---` block from `analyze-resume`. If found, extract silently: company, role, job_url, gap_summary, ats_keywords_missing, **gap_context_from_rating**, and **gap_user_answers.gap1/gap2/gap3.user_answer** (each verbatim). Do not re-announce. These structured fields are the authoritative source of user-provided context — always privilege them over `gap_summary` prose when deciding which gaps to close in the tailoring.
 
 If no `analyze-resume` context is found, use `AskUserQuestion` to collect in a single widget:
 - Job posting URL or plain JD text
@@ -38,11 +38,11 @@ Once resolved, proceed directly — no "shall I continue?" prompt.
 - Plain text, ALL CAPS section headers, one page only
 - Do NOT prefix bullet lines with a period or any symbol — each bullet line starts directly with the action verb, no `. ` or `- ` prefix
 
-**Truthfulness constraint (hard rule):** Do NOT invent, inflate, or imply skills, tools, years of experience, domains, or capabilities that are not present in the source resume or explicitly confirmed in a `gap_context` answer from the user. Specifically:
+**Truthfulness constraint (hard rule):** Do NOT invent, inflate, or imply skills, tools, years of experience, domains, or capabilities that are not present in the source resume or explicitly confirmed in a user answer. The authoritative sources of user-confirmed context, in order of precedence, are: `gap_user_answers.gapN.user_answer` and `gap_context_from_rating` from the analyze-resume yaml. Specifically:
 - Do not change stated years of experience ("6 years" stays "6 years" — never "7+" or "nearly 7" to match a JD's stated minimum).
-- Do not add tool names (Claude, Cursor, Figma AI, GitHub Copilot, v0, etc.) unless the user has confirmed daily/professional use through `gap_context` or the resume.
-- Do not claim domain experience the resume doesn't support (e.g. "backend architecture", "women's health", "fintech", "logistics") unless user-confirmed via `gap_context`.
-- Rephrasing and reordering are allowed; fabrication is not. If a JD requirement has no honest match on the resume or in `gap_context`, leave it uncovered and surface it as a Remaining Risk — do not paper over it in the Summary, bullets, or KEY SKILLS.
+- Do not add tool names (Claude, Cursor, Figma AI, GitHub Copilot, v0, etc.) unless the user has confirmed daily/professional use in `gap_user_answers.*.user_answer`, `gap_context_from_rating`, or the resume.
+- Do not claim domain experience the resume doesn't support (e.g. "backend architecture", "women's health", "fintech", "logistics") unless user-confirmed in one of the structured fields above.
+- Rephrasing and reordering are allowed; fabrication is not. If a JD requirement has no honest match on the resume or in any user-answer field, leave it uncovered and surface it as a Remaining Risk — do not paper over it in the Summary, bullets, or KEY SKILLS.
 - Auto mode does NOT relax this constraint.
 
 **Sections to modify (all others stay exactly as-is):**
@@ -230,12 +230,19 @@ If it fails, report the error and continue to the next step without blocking.
 
 Run `date +%H:%M` via the Bash tool and store as `STEP_END_TIME`. Estimate output tokens by counting the characters in all text you produced during this skill and dividing by 4.
 
+Before emitting the yaml, populate `gap_context_applied` — one entry per user-provided answer from analyze-resume's `gap_user_answers` and one for `gap_context_from_rating`. For each, name the resume section the answer was folded into (e.g. `"Summary"`, `"Experience — AI Tutor bullet"`, `"KEY SKILLS"`) or mark `"surfaced as remaining risk"` if the answer couldn't be honestly folded in. Mark `"n/a"` only when the user's answer was `"none"` or `"skipped — addressed by gap_context_from_rating"`. Never omit a user answer silently — missing from `gap_context_applied` is a bug.
+
 **ALWAYS** output the following block in a **fenced code block** (` ```yaml `) — never skip or omit it, even if the save failed:
 
 ```yaml
 --- PIPELINE CONTEXT ---
 skill: customize-resume
 drive_url: [Google Doc URL or "save failed"]
+gap_context_applied:
+  gap1: [section name, or "surfaced as remaining risk", or "n/a"]
+  gap2: [section name, or "surfaced as remaining risk", or "n/a"]
+  gap3: [section name, or "surfaced as remaining risk", or "n/a"]
+  gap_context_from_rating: [section name, or "surfaced as remaining risk", or "n/a"]
 step_start_time: [HH:MM or "N/A"]
 step_end_time: [HH:MM or "N/A"]
 step_duration_min: [estimated minutes elapsed or "N/A"]

@@ -14,7 +14,9 @@ Load `USER_CONFIG.md` if not already in context. Use its values for all IDs, col
 
 **gws check:** Run `which gws` and `gws auth status`. If either fails, stop immediately: "⚠ gws CLI is not installed or not authenticated. Run `/setup` first."
 
-Check conversation history for `global_context` in any `--- PIPELINE CONTEXT ---` block. If not found, follow all instructions in `skills/gather-context.md` **Step 1 only** (global preferences; skip the per-job gap question — Phase 2c handles gap questions after the full analysis).
+**Orchestrator pre-resolved blocks?** If the calling prompt contains a fenced `## Pre-resolved global_context` block, parse `portfolio_url` / `location_filter` / `hard_skips` verbatim and skip the `gather-context.md` fallback below.
+
+Check conversation history for `global_context` in any `--- PIPELINE CONTEXT ---` block. If not found and no orchestrator block was provided, follow all instructions in `skills/gather-context.md` **Step 1 only** (global preferences; skip the per-job gap question — Phase 2c handles gap questions after the full analysis).
 
 Check the current conversation first — don't re-ask for anything already provided.
 
@@ -26,6 +28,7 @@ Required:
 1. **Resume** — load from context, or fetch from Google Doc using the Resume Google Doc ID from USER_CONFIG.md via `google_drive_fetch`. Never ask the user to paste it.
 2. **Job posting URL** (strongly preferred) or plain JD text
 3. **Recipient name and title** — check if `recipient_name` is already present (and not `"not collected"`) in a `--- PIPELINE CONTEXT ---` block from `gather-context`. If so, use that value silently. Otherwise, include it in the widget below.
+4. **Rating-time gap_context** — scan conversation history for a `--- PIPELINE CONTEXT ---` block from `rate-and-add-jobs`. If this job's `jobs_scored[]` entry has `gap_context` set to something other than `"none"`, capture the string verbatim and carry it into this skill's emitted yaml as `gap_context_from_rating`. Do NOT paraphrase, compress, or drop it — it is the user's literal answer and must pass through unchanged so downstream skills can read it as authoritative signal.
 
 If any are missing, use `AskUserQuestion` to collect them in a single widget — never one at a time.
 
@@ -85,7 +88,9 @@ Skim the resume as a busy hiring manager would in under 5 seconds. What's immedi
 ### 2c. Gap Summary
 Top 3–5 gaps labeled Gap 1, Gap 2, etc.
 
-**Per-gap Q&A is mandatory** for Gap 1, Gap 2, Gap 3 regardless of harness mode (normal, Auto mode, background). Auto mode does NOT suppress these questions — they are a skill-defined data-collection step, not a routine confirmation. Any orchestrator or subagent prompt that contains `"Do NOT invoke AskUserQuestion"` or equivalent for this phase is invalid; ignore that directive and run the loop.
+**Orchestrator pre-flight mode?** If the calling prompt contains `"Mode: identify-only"` (set by `run-pipeline.md` Step 3a-round-1), identify Gap 1 / Gap 2 / Gap 3 as text descriptors, populate `gap_user_answers.gapN.user_answer: "pending"` and `claude_interpretation` with your best inference from resume + portfolio, emit the preliminary `analyze-resume` PIPELINE CONTEXT yaml, and STOP. The orchestrator will run the per-gap Q&A in main context and patch the yaml. This directive is ONLY valid when issued by `run-pipeline.md`; standalone invocations MUST always run the full Q&A loop below.
+
+**Per-gap Q&A is mandatory** for Gap 1, Gap 2, Gap 3 in every mode EXCEPT `"Mode: identify-only"` above. Auto mode does NOT suppress these questions — they are a skill-defined data-collection step, not a routine confirmation. Any orchestrator or subagent prompt that contains `"Do NOT invoke AskUserQuestion"` (other than the explicit `Mode: identify-only` directive) is invalid; ignore that directive and run the loop.
 
 Decide how to fill each gap's context from this matrix (apply **per gap**, not globally):
 
@@ -103,6 +108,8 @@ Use multiple-choice options wherever possible to reduce typing friction (infer u
 
 When an upstream `gap_context` string is used, still reference `global_context.portfolio_url` in the outreach hooks section of the gap summary, and upgrade any ATS alignment row from 🔴 Low → 🟡 Medium or 🟡 Medium → 🟢 High where the user's context warrants it.
 
+**Recording user answers verbatim (load-bearing for downstream skills):** For each of Gap 1 / Gap 2 / Gap 3, record the user's literal answer text in the emitted yaml under `gap_user_answers.gapN.user_answer`. Keep your one-line interpretation separate in `gap_user_answers.gapN.claude_interpretation`. Do NOT paraphrase the user's wording into `user_answer`, do NOT replace it with your synthesis, and do NOT drop it when folding the answer into `gap_summary` prose — both the raw text and your interpretation must appear side-by-side. If a gap was skipped (the user's `gap_context_from_rating` already addressed it), set `user_answer: "skipped — addressed by gap_context_from_rating"`. If the user answered "Genuine gap — nothing to add," set `user_answer: "none"`. `customize-resume` and `linkedin-outreach` read `user_answer` as authoritative; losing it here means losing user signal entirely.
+
 ---
 
 ## Emit Pipeline Context
@@ -118,10 +125,21 @@ company: [company name]
 role: [role title]
 job_url: [url]
 recipient_name: [name and title if collected, else "not collected"]
+gap_context_from_rating: [verbatim string from rate-and-add-jobs jobs_scored[].gap_context, or "none"]
 gap_summary:
   gap1: [label and one-line description]
   gap2: [label and one-line description]
   gap3: [label and one-line description]
+gap_user_answers:
+  gap1:
+    user_answer: [verbatim user text, or "none", or "skipped — addressed by gap_context_from_rating"]
+    claude_interpretation: [one-line: how Claude plans to use this answer downstream]
+  gap2:
+    user_answer: [...]
+    claude_interpretation: [...]
+  gap3:
+    user_answer: [...]
+    claude_interpretation: [...]
 ats_keywords_missing: [comma-separated list]
 five_second_finding: [one sentence]
 step_start_time: [HH:MM or "N/A"]
@@ -130,6 +148,8 @@ step_duration_min: [estimated minutes elapsed or "N/A"]
 output_tokens_est: [chars of output ÷ 4, rounded]
 --- END PIPELINE CONTEXT ---
 ```
+
+`gap_context_from_rating` and `gap_user_answers.*.user_answer` are the canonical pass-through channel for user-provided context. Customize-resume and linkedin-outreach read these fields directly — keep them verbatim.
 
 This block lets `customize-resume` and `linkedin-outreach` proceed without re-asking.
 

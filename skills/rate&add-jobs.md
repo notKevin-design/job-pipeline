@@ -6,6 +6,17 @@ Triggers on: "rate these jobs", "score these postings", "which jobs should I app
 
 ---
 
+## Orchestrator mode directives (optional)
+
+When called by `run-pipeline.md`, this skill runs in one of two modes via a directive in the caller's prompt. Standalone invocations (without a mode directive) run the full flow end-to-end.
+
+- **`Mode: fetch-only`** — Run Step 1 (extraction) and Step 1.8 (JD caching) ONLY. Skip Steps 1.5, 1.6, 1.7, 2, 2.5, 3, 4, 5, 6, 7, and 8. Emit the fetch-only yaml schema (see `run-pipeline.md` Step 1a) with `skill: rate-and-add-jobs-fetch` and STOP. The orchestrator will fire all widgets in main context and re-dispatch in score-only mode.
+- **`Mode: score-only`** — Skip Step 1, Step 1.5, Step 1.6, Step 1.7 (all already resolved by the orchestrator in main context). Read the `## Pre-resolved global_context` and `## Pre-resolved per-job inputs` blocks from the prompt. Use the provided `jd_file` paths via `Read` instead of re-fetching. Skip Step 2's widget dispatch to `gather-context.md` (globals are pre-resolved). Skip Step 2.5's widget (gap_context is pre-resolved per-job in the input block). Run Step 2's hard-skip and location-filter application, then Steps 3–8 normally.
+
+If no mode directive is present, run the full flow as a standalone invocation (widgets may fire in main if invoked directly by the user; widgets will no-op and default to "none" if the harness lacks `AskUserQuestion`).
+
+---
+
 ## Resolve Inputs
 
 **First action:** Run `date +%H:%M` via the Bash tool and store the result as `STEP_START_TIME`. Do this before anything else in this skill.
@@ -242,6 +253,10 @@ Resolve `global_context` in this order — the **first** source that yields all 
 ---
 
 ## Step 2.5 — Per-Job Gap Questions
+
+**Orchestrator pre-resolved?** If the calling prompt contains a `## Pre-resolved per-job inputs` block with a `gap_context:` field per job, parse each value verbatim, skip the widget below, and proceed directly to scoring. The verbatim text is authoritative — do not paraphrase.
+
+**Standalone invocation (no orchestrator):** if `AskUserQuestion` is genuinely unavailable in the current environment, emit `gap_context: "none"` for every job and proceed; the user can re-run the skill in an interactive harness to collect context.
 
 For each job that passed the stale and hard-skip gates, compare the JD requirements to the resume and identify the **single most impactful gap** — the requirement where the user's context would most change the score or the downstream resume/outreach output. Only generate a question if the gap is material (would plausibly shift Role Match or Industry Fit by ≥1 point, or surface a concrete portfolio or outreach angle).
 

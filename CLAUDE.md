@@ -5,6 +5,26 @@ This is a job search pipeline workspace. When you launch from here:
 1. **Load `USER_CONFIG.md`** from the project root — it contains all Google IDs, column mappings, and user identity values. Use these values everywhere instead of any hardcoded strings.
 2. **If `USER_CONFIG.md` does not exist**, run `skills/setup.md` immediately to guide the user through onboarding before doing anything else.
 
+---
+
+## Top-priority orchestrator rule: Verbatim Relay Protocol
+
+When this project's orchestrator (`/0-run-pipeline` in `skills/run-pipeline.md`) dispatches a subagent and waits for its return, the orchestrator's NEXT chat message MUST begin with a heading of the form `### [Step name] — return (verbatim)` and contain a character-for-character copy of the subagent's full return text — every table row, every bullet, every yaml line.
+
+The user cannot see task-notification payloads. They only see your chat messages. If you do not paste the subagent return into chat, the user does not see it.
+
+**Banned phrases — never substitute these for real relay:**
+- "Subagent output relayed verbatim above"
+- "Step [N] verbatim relay complete (above)"
+- "verbatim relay above"
+- "see above for the full output"
+- "summary of the [step] return"
+- "Here's the gist …"
+
+If you catch yourself typing one of these, STOP and paste the content. This rule applies to every Step 1a, 1c, 3a-round-1, 3b, and 3c subagent return. Orchestrator commentary may follow, but only under a separate `### Orchestrator note` heading AFTER the verbatim block. Full mechanics in `skills/run-pipeline.md` → "Verbatim Relay Protocol".
+
+This rule overrides any auto-mode "minimize interruptions" or generic "be terse" instinct. The relay is functional — without it, the user cannot review per-job ATS tables, gap analyses, change logs, or risk lists.
+
 ## Version History
 
 | Version | Summary | Platform |

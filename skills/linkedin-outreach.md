@@ -74,15 +74,15 @@ Rules:
 
 After saving, output only:
 1. One brief note flagging any contextual risk (stale posting, recruiter vs. hiring manager, unknown company, etc.) per job.
-2. Confirmation: "✓ InMail + Connection Note saved to [InMail column] & [Connection Note column] for [company]." (use column letters from USER_CONFIG.md)
+2. Confirmation: "✓ InMail + Connection Note saved to columns [InMail column from USER_CONFIG.md] & [Connection Note column from USER_CONFIG.md] for [company]." (always use the column letters read from USER_CONFIG.md, never hardcoded letters)
 
 ---
 
 ## Phase 4.5 — Save Outreach to Google Sheets
 
-Write and execute `/tmp/log_outreach.py` to write the InMail to **column R** (startColumnIndex: 17) and the Connection Request to **column S** (startColumnIndex: 18) for the job's existing row in the tracker sheet.
+Write and execute `/tmp/log_outreach.py` to write the InMail to the **InMail column** and the Connection Request to the **Connection Note column** for the job's existing row in the tracker sheet. Always read column letters from USER_CONFIG.md — never hardcode them.
 
-Match the job's row by searching column N (Job Post URL) for the job_url. If not found, fall back to column J (Company name, case-insensitive substring match).
+Match the job's row by searching the **Job URL lookup column** (from USER_CONFIG.md) for the job_url. Search in **reverse order** (last row first) so the most recently logged entry is always found before any older duplicate. If not found, fall back to the **Company name column** (from USER_CONFIG.md) using a case-insensitive substring match, also in reverse order.
 
 ```python
 import subprocess, json, sys
@@ -109,24 +109,31 @@ def gws_run(*cmd, body=None):
     out = strip_keyring(r.stdout).strip()
     return json.loads(out) if out else {}
 
-COL_URL     = "..."   # Job URL lookup column from USER_CONFIG.md
-COL_COMPANY = "..."   # Company name lookup column from USER_CONFIG.md
-COL_INMAIL  = "..."   # InMail column from USER_CONFIG.md
-COL_CONN    = "..."   # Connection Note column from USER_CONFIG.md
+COL_URL     = "..."   # Job URL lookup column from USER_CONFIG.md (e.g. "R")
+COL_COMPANY = "..."   # Company name lookup column from USER_CONFIG.md (e.g. "N")
+COL_INMAIL  = "..."   # InMail column from USER_CONFIG.md (e.g. "V")
+COL_CONN    = "..."   # Connection Note column from USER_CONFIG.md (e.g. "W")
 COL_INMAIL_IDX = ord(COL_INMAIL) - ord('A')
 COL_CONN_IDX   = ord(COL_CONN) - ord('A')
 
-# Find row by URL column first, then company column as fallback
+# Find row by URL column — search in REVERSE so the latest entry wins over older duplicates
 urls = gws_run("sheets", "spreadsheets", "values", "get",
     "--params", json.dumps({"spreadsheetId": SPREADSHEET_ID, "range": f"{TAB}!{COL_URL}:{COL_URL}"}))
 url_vals = [row[0] if row else "" for row in urls.get("values", [])]
-row = next((i + 1 for i, v in enumerate(url_vals) if JOB_URL and JOB_URL in v), None)
+row = None
+for i in range(len(url_vals) - 1, -1, -1):
+    if JOB_URL and JOB_URL in url_vals[i]:
+        row = i + 1
+        break
 
 if row is None:
     companies = gws_run("sheets", "spreadsheets", "values", "get",
         "--params", json.dumps({"spreadsheetId": SPREADSHEET_ID, "range": f"{TAB}!{COL_COMPANY}:{COL_COMPANY}"}))
     co_vals = [r[0] if r else "" for r in companies.get("values", [])]
-    row = next((i + 1 for i, v in enumerate(co_vals) if COMPANY.lower() in v.lower()), None)
+    for i in range(len(co_vals) - 1, -1, -1):
+        if COMPANY.lower() in co_vals[i].lower():
+            row = i + 1
+            break
 
 if row is None:
     print(f"⚠ Row not found for {COMPANY} — skipping Sheets write.", file=sys.stderr)
@@ -159,7 +166,7 @@ gws_run("sheets", "spreadsheets", "batchUpdate",
         }
     }]})
 
-print(f"✓ InMail + Connection Note saved to columns R & S, row {row}.")
+print(f"✓ InMail + Connection Note saved to columns {COL_INMAIL} & {COL_CONN}, row {row}.")
 ```
 
 If it fails, report the error and continue.
